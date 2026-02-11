@@ -1,16 +1,24 @@
 import { expect, test } from "@playwright/test";
 
+/**
+ * E2E tests use the password-based fallback flow since Google OAuth
+ * requires a real browser redirect to Google's servers.
+ * Without VITE_SUPABASE_URL set, the onboarding screen shows the
+ * password form directly (no Google button).
+ */
 test.describe("Budget Vault core flow", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.evaluate(() => localStorage.clear());
     await page.reload();
+    // Wait for loading phase to finish
+    await page.waitForSelector(".onboarding-shell", { timeout: 5000 });
   });
 
   test("onboarding to dashboard and core interactions work", async ({ page }) => {
     await page.getByPlaceholder("Your name").fill("Martin");
     await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder("Vault password").fill("super-secret-password");
+    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
     await page.getByRole("button", { name: "Create Vault" }).click();
 
     await expect(
@@ -36,7 +44,7 @@ test.describe("Budget Vault core flow", () => {
   test("supports category/family management and budget editing", async ({ page }) => {
     await page.getByPlaceholder("Your name").fill("Martin");
     await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder("Vault password").fill("super-secret-password");
+    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
     await page.getByRole("button", { name: "Create Vault" }).click();
     await page.getByRole("button", { name: /Add bank account/i }).click();
     await page.getByRole("button", { name: "Sync now" }).click();
@@ -45,10 +53,7 @@ test.describe("Budget Vault core flow", () => {
     const categoryForm = page.locator("form").filter({
       has: page.getByPlaceholder("New category"),
     });
-    await categoryForm.getByRole("button", {
-      name: "Add",
-      exact: true,
-    }).click();
+    await categoryForm.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByText("Pets").first()).toBeVisible();
 
     await page.getByPlaceholder("Invite by email").fill("family@example.com");
@@ -64,7 +69,7 @@ test.describe("Budget Vault core flow", () => {
   test("supports chart drill-down and dismissal", async ({ page }) => {
     await page.getByPlaceholder("Your name").fill("Martin");
     await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder("Vault password").fill("super-secret-password");
+    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
     await page.getByRole("button", { name: "Create Vault" }).click();
     await page.getByRole("button", { name: /Add bank account/i }).click();
     await page.getByRole("button", { name: "Sync now" }).click();
@@ -74,7 +79,6 @@ test.describe("Budget Vault core flow", () => {
     await expect(page.getByRole("heading", { name: "Last 6 months trend" })).toBeVisible();
     await expect(page.locator(".selection-label")).toBeVisible();
 
-    // Dismiss the drill-down
     await page.locator(".selection-label button").click();
     await expect(page.getByRole("heading", { name: "Category drill-down" })).not.toBeVisible();
   });
@@ -84,18 +88,14 @@ test.describe("Budget Vault core flow", () => {
 
     await page.getByPlaceholder("Your name").fill("Martin");
     await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder("Vault password").fill("super-secret-password");
+    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
     await page.getByRole("button", { name: "Create Vault" }).click();
     await page.getByRole("button", { name: /Add bank account/i }).click();
     await page.getByRole("button", { name: "Sync now" }).click();
 
-    await expect(
-      page.getByRole("heading", { name: /here's your spend view/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /here's your spend view/i })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Expenses by category" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Budget vs actual" })).toBeVisible();
-
-    const periodControls = page.getByRole("button", { name: "Month", exact: true });
-    await expect(periodControls).toBeVisible();
+    await expect(page.getByRole("button", { name: "Month", exact: true })).toBeVisible();
   });
 });

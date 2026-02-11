@@ -37,6 +37,14 @@ export { ACCEPT_THRESHOLD, AUTO_RULE_THRESHOLD };
 
 const MAX_BATCH = 50;
 
+/** Strip control characters and limit length to mitigate prompt injection. */
+function sanitizeMerchant(merchant: string): string {
+  return merchant
+    .replace(/\p{Cc}/gu, "") // strip control characters
+    .replace(/["""''`]/g, "'") // normalize quotes
+    .slice(0, 100);
+}
+
 export function buildPrompt(
   txs: Transaction[],
   categories: Category[],
@@ -59,7 +67,7 @@ export function buildPrompt(
     .slice(0, MAX_BATCH)
     .map(
       (tx, i) =>
-        `${i + 1}. id:"${tx.id}" description:"${tx.merchant}" amount:${tx.amount}`,
+        `${i + 1}. id:"${tx.id}" description:"${sanitizeMerchant(tx.merchant)}" amount:${tx.amount}`,
     )
     .join("\n");
 
@@ -155,7 +163,7 @@ async function callOpenAI(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`OpenAI API error (${response.status}): ${err}`);
+    throw new Error(`OpenAI API error (${response.status}): ${err.slice(0, 200)}`);
   }
 
   const json = (await response.json()) as {
@@ -180,10 +188,12 @@ async function callAnthropic(
 
   const response = await fetch(`${proxyUrl}/ai/proxy`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-provider-key": apiKey,
+    },
     body: JSON.stringify({
       provider: "anthropic",
-      apiKey,
       body: {
         model,
         max_tokens: 4096,
@@ -194,7 +204,7 @@ async function callAnthropic(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Anthropic proxy error (${response.status}): ${err}`);
+    throw new Error(`Anthropic proxy error (${response.status}): ${err.slice(0, 200)}`);
   }
 
   const json = (await response.json()) as {
@@ -208,11 +218,14 @@ async function callGoogle(
   apiKey: string,
   model: string,
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
@@ -224,7 +237,7 @@ async function callGoogle(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Google Gemini API error (${response.status}): ${err}`);
+    throw new Error(`Google Gemini API error (${response.status}): ${err.slice(0, 200)}`);
   }
 
   const json = (await response.json()) as {

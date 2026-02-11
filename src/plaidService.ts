@@ -71,7 +71,10 @@ export async function syncTransactionsForAccount(
     }
   }
 
-  // Offline/dev fallback: deterministic mock sync data.
+  // Offline/dev fallback: mock data only available in development builds.
+  if (!import.meta.env.DEV) {
+    return [];
+  }
   const now = new Date();
   const txs: Transaction[] = [];
   for (let i = 0; i < 24; i += 1) {

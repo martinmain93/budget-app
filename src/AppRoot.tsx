@@ -1,47 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { usePlaidLink } from "react-plaid-link";
-import { addOrBoostRule, autoCategorizeWithAI, suggestRules } from "./aiCategorization";
-import { OnboardingScreen, UnlockScreen } from "./AuthScreens";
+import { suggestRules } from "./aiCategorization";
+import { OnboardingScreen, PinSetupScreen, PinUnlockScreen, UnlockScreen } from "./AuthScreens";
 import { Dashboard } from "./Dashboard";
-import { decryptAllTransactions, rebuildShardMap, unlockVaultDataKey } from "./cryptoVault";
-import { syncVaultMetadata } from "./metadataSync";
-import {
-  createPlaidLinkToken,
-  exchangePlaidPublicToken,
-  syncTransactionsForAccount,
-} from "./plaidService";
-import {
-  buildBudgetRows,
-  buildCategoryChartData,
-  buildGroupedByMerchant,
-  buildSixMonthBars,
-  currency,
-  filterTransactionsForPeriod,
-  monthKey,
-  normalizeGroup,
-  periodLabel,
-} from "./appSelectors";
-import type {
-  AiProviderSettings,
-  BankAccount,
-  BudgetTarget,
-  EncryptedVault,
-  TimeGranularity,
-  Transaction,
-  UserSession,
-} from "./types";
-import {
-  clearVault,
-  initializeVault,
-  loadSession,
-  loadVault,
-  persistVault,
-} from "./vaultStore";
+import { decryptAllTransactions, unlockVaultDataKey } from "./cryptoVault";
+import { type GoogleUser, getSupabaseSession, onAuthStateChange, signInWithGoogle, signOutSupabase, toGoogleUser } from "./googleAuth";
+import { vaultExistsInSupabase } from "./metadataSync";
+import { createPlaidLinkToken } from "./plaidService";
+import { buildBudgetRows, buildCategoryChartData, buildGroupedByMerchant, buildSixMonthBars, currency, filterTransactionsForPeriod, periodLabel } from "./appSelectors";
+import type { AiProviderSettings, EncryptedVault, TimeGranularity, Transaction, UserSession } from "./types";
+import { clearVault, decryptVaultMetadata, initializeGoogleVault, initializeVault, loadSession, loadVault, persistSession, unlockGoogleVault } from "./vaultStore";
+import { handleAddCategory, handleAddFamily, handleAiCategorize, handlePlaidSuccess, handleSaveBudget, handleSyncNow, handleUpdateAiSettings, handleUpdateTxCategory } from "./vaultActions";
 
-const PALETTE = ["#A8D8EA", "#AA96DA", "#FCBAD3", "#B5EAD7", "#FBC687"];
+type AuthPhase = "loading" | "onboarding" | "pin-setup" | "pin-unlock" | "password-unlock" | "ready";
 
 export default function AppRoot() {
+  const [authPhase, setAuthPhase] = useState<AuthPhase>("loading");
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
   const [session, setSession] = useState<UserSession | null>(null);
   const [vault, setVault] = useState<EncryptedVault | null>(null);
   const [dataKey, setDataKey] = useState<CryptoKey | null>(null);
@@ -51,367 +29,119 @@ export default function AppRoot() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [unlockAttempts, setUnlockAttempts] = useState(0);
+  const [unlockCooldownUntil, setUnlockCooldownUntil] = useState(0);
   const [plaidToken, setPlaidToken] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [editingBudgetCategory, setEditingBudgetCategory] = useState<string | null>(null);
   const [editingBudgetValue, setEditingBudgetValue] = useState("");
-  const [onboarding, setOnboarding] = useState({
-    displayName: "",
-    email: "",
-    password: "",
-  });
+  const [onboarding, setOnboarding] = useState({ displayName: "", email: "", password: "" });
   const [unlockPassword, setUnlockPassword] = useState("");
   const [aiCategorizingNow, setAiCategorizingNow] = useState(false);
   const [aiLastResult, setAiLastResult] = useState<string | null>(null);
 
   useEffect(() => {
-    const existingVault = loadVault();
-    const existingSession = loadSession();
-    if (existingVault && existingSession) {
-      setVault(existingVault);
-      setSession(existingSession);
-    }
+    (async () => {
+      const sb = await getSupabaseSession();
+      if (sb?.user) {
+        const gu = toGoogleUser(sb.user);
+        setGoogleUser(gu);
+        setAuthPhase((await vaultExistsInSupabase()) || loadVault() ? "pin-unlock" : "pin-setup");
+        return;
+      }
+      const v = loadVault(), s = loadSession();
+      if (v && s) { setVault(v); setSession(s); setAuthPhase(s.authMethod === "google" ? "onboarding" : "password-unlock"); return; }
+      setAuthPhase("onboarding");
+    })();
   }, []);
 
-  useEffect(() => {
-    if (!session || !vault) return;
-    createPlaidLinkToken(session.userId)
-      .then((token) => setPlaidToken(token))
-      .catch(() => setPlaidToken(null));
-  }, [session, vault]);
+  useEffect(() => { const { unsubscribe } = onAuthStateChange((_e, s) => { if (s?.user) setGoogleUser(toGoogleUser(s.user)); }); return unsubscribe; }, []);
+  useEffect(() => { if (vault && dataKey) decryptAllTransactions(vault, dataKey).then(setTransactions).catch(() => setTransactions([])); }, [vault, dataKey]);
+  useEffect(() => { if (session && vault) createPlaidLinkToken(session.userId).then(setPlaidToken).catch(() => setPlaidToken(null)); }, [session, vault]);
 
-  useEffect(() => {
-    if (!vault || !dataKey) return;
-    decryptAllTransactions(vault, dataKey).then(setTransactions).catch(() => {
-      setTransactions([]);
-    });
-  }, [vault, dataKey]);
+  const filteredTx = useMemo(() => filterTransactionsForPeriod(transactions, granularity, selectedDate), [transactions, granularity, selectedDate]);
+  const categoryChartData = useMemo(() => buildCategoryChartData(vault, filteredTx), [vault, filteredTx]);
+  const groupedByMerchant = useMemo(() => buildGroupedByMerchant(filteredTx, selectedCategoryId), [filteredTx, selectedCategoryId]);
+  const sixMonthBars = useMemo(() => buildSixMonthBars(transactions, selectedDate, selectedCategoryId), [transactions, selectedDate, selectedCategoryId]);
+  const budgetRows = useMemo(() => buildBudgetRows(vault, selectedDate, filteredTx), [vault, selectedDate, filteredTx]);
+  const uncategorized = useMemo(() => filteredTx.filter((t) => t.categoryId === "uncategorized").slice(0, 10), [filteredTx]);
+  const ruleSuggestions = useMemo(() => vault ? suggestRules(transactions, vault.rules, vault.categories) : [], [vault, transactions]);
 
-  const filteredTransactions = useMemo(
-    () => filterTransactionsForPeriod(transactions, granularity, selectedDate),
-    [transactions, granularity, selectedDate],
-  );
-  const categoryChartData = useMemo(
-    () => buildCategoryChartData(vault, filteredTransactions),
-    [vault, filteredTransactions],
-  );
-  const groupedByMerchant = useMemo(
-    () => buildGroupedByMerchant(filteredTransactions, selectedCategoryId),
-    [filteredTransactions, selectedCategoryId],
-  );
-  const sixMonthBars = useMemo(
-    () => buildSixMonthBars(transactions, selectedDate, selectedCategoryId),
-    [transactions, selectedDate, selectedCategoryId],
-  );
-  const budgetRows = useMemo(
-    () => buildBudgetRows(vault, selectedDate, filteredTransactions),
-    [vault, selectedDate, filteredTransactions],
-  );
-  const uncategorized = useMemo(
-    () => filteredTransactions.filter((tx) => tx.categoryId === "uncategorized").slice(0, 10),
-    [filteredTransactions],
-  );
-  const ruleSuggestions = useMemo(() => {
-    if (!vault) return [];
-    return suggestRules(transactions, vault.rules, vault.categories);
-  }, [vault, transactions]);
+  const ctx = vault && dataKey ? { vault, dataKey, setVault, setTransactions, transactions } : null;
 
-  async function onPlaidSuccess(publicToken: string): Promise<void> {
-    if (!vault) return;
-    const accountFromApi = await exchangePlaidPublicToken(publicToken);
-    const linked: BankAccount = accountFromApi
-      ? {
-          id: accountFromApi.accountId,
-          plaidAccountId: accountFromApi.accountId,
-          institutionName: accountFromApi.institutionName,
-          accountName: accountFromApi.accountName,
-          mask: accountFromApi.mask,
-          addedAt: new Date().toISOString(),
-        }
-      : {
-          id: crypto.randomUUID(),
-          institutionName: "Demo Bank",
-          accountName: `Checking ${vault.linkedAccounts.length + 1}`,
-          mask: String(1000 + vault.linkedAccounts.length).slice(-4),
-          addedAt: new Date().toISOString(),
-        };
-    const nextVault = { ...vault, linkedAccounts: [...vault.linkedAccounts, linked] };
-    setVault(nextVault);
-    persistVault(nextVault);
-    if (session) await syncVaultMetadata(session, nextVault);
-  }
+  function handleGoogleSignIn() { setGoogleLoading(true); signInWithGoogle().catch(() => setGoogleLoading(false)); }
 
-  const { open: openPlaidLink, ready: plaidReady } = usePlaidLink({
-    token: plaidToken ?? "",
-    onSuccess: async (publicToken) => {
-      await onPlaidSuccess(publicToken);
-    },
-  });
-
-  async function handleCreateVault(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    const created = await initializeVault(onboarding);
-    setSession(created.session);
-    setVault(created.vault);
-    setDataKey(created.dataKey);
-  }
-
-  async function handleUnlock(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    if (!vault) return;
+  async function handlePinSetup(pin: string) {
+    if (!googleUser) return;
     try {
-      setDataKey(await unlockVaultDataKey(vault.envelope, unlockPassword));
-      setUnlockError(null);
-    } catch (error) {
+      const r = await initializeGoogleVault({ userId: googleUser.id, email: googleUser.email, displayName: googleUser.displayName, googleSub: googleUser.googleSub, pin });
+      setSession(r.session); setVault(r.vault); setDataKey(r.dataKey); setAuthPhase("ready");
+    } catch (err) { setPinError(err instanceof Error ? err.message : "Failed to create vault"); }
+  }
+
+  async function handlePinUnlock(pin: string) {
+    if (!googleUser) return;
+    try {
+      const r = await unlockGoogleVault(googleUser.googleSub, pin);
+      const sess: UserSession = { userId: googleUser.id, email: googleUser.email, displayName: googleUser.displayName, authMethod: "google" };
+      setSession(sess); persistSession(sess); setVault(r.vault); setDataKey(r.dataKey); setPinError(null); setAuthPhase("ready");
+    } catch { setPinError("Incorrect PIN or vault not found."); }
+  }
+
+  async function handleCreateVault(e: FormEvent) { e.preventDefault(); const r = await initializeVault(onboarding); setSession(r.session); setVault(r.vault); setDataKey(r.dataKey); setAuthPhase("ready"); }
+
+  async function handlePasswordUnlock(e: FormEvent) {
+    e.preventDefault();
+    if (!vault) return;
+    if (Date.now() < unlockCooldownUntil) { setUnlockError(`Too many attempts. Please wait ${Math.ceil((unlockCooldownUntil - Date.now()) / 1000)}s.`); return; }
+    try {
+      const k = await unlockVaultDataKey(vault.envelope, unlockPassword);
+      const h = await decryptVaultMetadata(vault, k);
+      setVault(h); setDataKey(k); setUnlockError(null); setUnlockAttempts(0); setAuthPhase("ready");
+    } catch {
+      const n = unlockAttempts + 1; setUnlockAttempts(n);
+      if (n >= 3) setUnlockCooldownUntil(Date.now() + Math.min(300_000, 1000 * 2 ** (n - 2)));
       setUnlockError("Could not unlock vault. Please verify credentials.");
-      console.error(error);
     }
   }
 
-  async function syncNow(): Promise<void> {
-    if (!vault || !dataKey) return;
-    setSyncing(true);
-    try {
-      const existingIds = new Set(transactions.map((tx) => tx.id));
-      const synced = await Promise.all(
-        vault.linkedAccounts.map((account) =>
-          syncTransactionsForAccount(account.id, existingIds),
-        ),
-      );
-      // Tier 1 (rules + heuristic) runs first, then Tier 2 (LLM) if configured
-      const aiResult = await autoCategorizeWithAI(
-        [...transactions, ...synced.flat()],
-        vault.rules,
-        vault.categories,
-        vault.aiSettings,
-      );
-      const nextTransactions = aiResult.transactions;
-      const nextVault: EncryptedVault = {
-        ...vault,
-        rules: aiResult.rules,
-        shards: await rebuildShardMap(dataKey, nextTransactions),
-      };
-      setTransactions(nextTransactions);
-      setVault(nextVault);
-      persistVault(nextVault);
-      if (aiResult.categorizedCount > 0) {
-        setAiLastResult(`AI categorized ${aiResult.categorizedCount} transaction(s)`);
-      }
-      if (aiResult.error) {
-        setAiLastResult(`AI error: ${aiResult.error}`);
-      }
-      if (session) await syncVaultMetadata(session, nextVault);
-    } finally {
-      setSyncing(false);
-    }
-  }
+  async function handleSignOut() { await signOutSupabase(); clearVault(); setGoogleUser(null); setSession(null); setVault(null); setDataKey(null); setAuthPhase("onboarding"); }
 
-  useEffect(() => {
-    if (!dataKey || !vault) return;
-    syncNow().catch((error) => console.error(error));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey]);
+  const { open: openPlaidLink, ready: plaidReady } = usePlaidLink({ token: plaidToken ?? "", onSuccess: async (t) => { if (ctx) await handlePlaidSuccess(ctx, t); } });
 
-  function shiftDate(direction: -1 | 1): void {
-    if (granularity === "month") {
-      setSelectedDate((d) => new Date(d.getFullYear(), d.getMonth() + direction, 1));
-      return;
-    }
-    setSelectedDate((d) => new Date(d.getFullYear() + direction, d.getMonth(), 1));
-  }
+  const syncNow = async () => { if (ctx) await handleSyncNow(ctx, setSyncing, setAiLastResult); };
+  useEffect(() => { if (dataKey && vault) { syncNow().catch((e) => { if (import.meta.env.DEV) console.error(e); }); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [dataKey]);
 
-  async function saveBudget(categoryId: string): Promise<void> {
-    if (!vault) return;
-    const amount = Number(editingBudgetValue);
-    if (!Number.isFinite(amount) || amount < 0) return;
-    const currentMonth = monthKey(selectedDate);
-    const remainder = vault.budgets.filter(
-      (b) => !(b.categoryId === categoryId && b.monthKey === currentMonth),
-    );
-    const nextBudgets: BudgetTarget[] = [...remainder, { categoryId, monthKey: currentMonth, amount }];
-    const nextVault = { ...vault, budgets: nextBudgets };
-    setVault(nextVault);
-    persistVault(nextVault);
-    setEditingBudgetCategory(null);
-    setEditingBudgetValue("");
-    if (session) await syncVaultMetadata(session, nextVault);
-  }
+  function shiftDate(d: -1 | 1) { granularity === "month" ? setSelectedDate((v) => new Date(v.getFullYear(), v.getMonth() + d, 1)) : setSelectedDate((v) => new Date(v.getFullYear() + d, v.getMonth(), 1)); }
 
-  async function addFamilyMember(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    if (!vault || !inviteEmail.trim()) return;
-    const nextVault: EncryptedVault = {
-      ...vault,
-      familyMembers: [
-        ...vault.familyMembers,
-        {
-          id: crypto.randomUUID(),
-          email: inviteEmail.trim().toLowerCase(),
-          displayName: inviteEmail.split("@")[0],
-          role: "member",
-        },
-      ],
-    };
-    setVault(nextVault);
-    persistVault(nextVault);
-    setInviteEmail("");
-    if (session) await syncVaultMetadata(session, nextVault);
-  }
-
-  async function addCategory(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    if (!vault || !newCategoryName.trim()) return;
-    const nextVault: EncryptedVault = {
-      ...vault,
-      categories: [
-        ...vault.categories,
-        {
-          id: normalizeGroup(newCategoryName).replace(/\s+/g, "-"),
-          name: newCategoryName.trim(),
-          color: PALETTE[vault.categories.length % PALETTE.length],
-          isDefault: false,
-        },
-      ],
-    };
-    setVault(nextVault);
-    persistVault(nextVault);
-    setNewCategoryName("");
-  }
-
-  async function updateTransactionCategory(txId: string, categoryId: string): Promise<void> {
-    if (!vault || !dataKey) return;
-    const targetTx = transactions.find((tx) => tx.id === txId);
-    const nextTransactions = transactions.map((tx) =>
-      tx.id === txId ? { ...tx, categoryId } : tx,
-    );
-    const nextRules = targetTx
-      ? addOrBoostRule(vault.rules, normalizeGroup(targetTx.merchant), categoryId)
-      : vault.rules;
-    const nextVault: EncryptedVault = {
-      ...vault,
-      rules: nextRules,
-      shards: await rebuildShardMap(dataKey, nextTransactions),
-    };
-    setTransactions(nextTransactions);
-    setVault(nextVault);
-    persistVault(nextVault);
-  }
-
-  async function aiCategorizeNow(): Promise<void> {
-    if (!vault || !dataKey || !vault.aiSettings?.enabled) return;
-    setAiCategorizingNow(true);
-    setAiLastResult(null);
-    try {
-      const aiResult = await autoCategorizeWithAI(
-        transactions,
-        vault.rules,
-        vault.categories,
-        vault.aiSettings,
-      );
-      const nextVault: EncryptedVault = {
-        ...vault,
-        rules: aiResult.rules,
-        shards: await rebuildShardMap(dataKey, aiResult.transactions),
-      };
-      setTransactions(aiResult.transactions);
-      setVault(nextVault);
-      persistVault(nextVault);
-      if (aiResult.error) {
-        setAiLastResult(`Error: ${aiResult.error}`);
-      } else if (aiResult.categorizedCount > 0) {
-        setAiLastResult(
-          `Categorized ${aiResult.categorizedCount} transaction(s)`,
-        );
-      } else {
-        setAiLastResult("No new transactions to categorize");
-      }
-      if (session) await syncVaultMetadata(session, nextVault);
-    } catch (err) {
-      setAiLastResult(
-        `Error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    } finally {
-      setAiCategorizingNow(false);
-    }
-  }
-
-  async function updateAiSettings(
-    settings: AiProviderSettings | undefined,
-  ): Promise<void> {
-    if (!vault) return;
-    const nextVault: EncryptedVault = { ...vault, aiSettings: settings };
-    setVault(nextVault);
-    persistVault(nextVault);
-    setAiLastResult(null);
-    if (session) await syncVaultMetadata(session, nextVault);
-  }
-
-  if (!vault || !session) {
-    return <OnboardingScreen onboarding={onboarding} onSubmit={handleCreateVault} onChange={setOnboarding} />;
-  }
-  if (!dataKey) {
-    return (
-      <UnlockScreen
-        unlockPassword={unlockPassword}
-        unlockError={unlockError}
-        onSubmit={handleUnlock}
-        onPasswordChange={setUnlockPassword}
-      />
-    );
-  }
+  /* ── Render ─────────────────────────────────────────── */
+  if (authPhase === "loading") return <div className="shell onboarding-shell"><div className="card"><p>Loading...</p></div></div>;
+  if (authPhase === "onboarding") return <OnboardingScreen onboarding={onboarding} onSubmit={handleCreateVault} onChange={setOnboarding} onGoogleSignIn={handleGoogleSignIn} googleLoading={googleLoading} />;
+  if (authPhase === "pin-setup" && googleUser) return <PinSetupScreen googleEmail={googleUser.email} onSubmit={handlePinSetup} error={pinError} />;
+  if (authPhase === "pin-unlock" && googleUser) return <PinUnlockScreen googleEmail={googleUser.email} onSubmit={handlePinUnlock} error={pinError} onSignOut={handleSignOut} />;
+  if (authPhase === "password-unlock" && vault) return <UnlockScreen unlockPassword={unlockPassword} unlockError={unlockError} onSubmit={handlePasswordUnlock} onPasswordChange={setUnlockPassword} />;
+  if (!session || !ctx) return <OnboardingScreen onboarding={onboarding} onSubmit={handleCreateVault} onChange={setOnboarding} onGoogleSignIn={handleGoogleSignIn} googleLoading={googleLoading} />;
 
   return (
-    <Dashboard
-      firstName={session.displayName.split(" ")[0]}
-      syncing={syncing}
-      periodLabel={periodLabel(granularity, selectedDate)}
-      granularity={granularity}
-      categoryChartData={categoryChartData}
-      linkedAccounts={vault.linkedAccounts}
-      plaidToken={plaidToken}
-      plaidReady={plaidReady}
-      selectedCategoryId={selectedCategoryId}
-      groupedByMerchant={groupedByMerchant}
-      sixMonthBars={sixMonthBars}
-      budgetRows={budgetRows}
-      editingBudgetCategory={editingBudgetCategory}
-      editingBudgetValue={editingBudgetValue}
-      uncategorized={uncategorized}
-      ruleSuggestions={ruleSuggestions}
-      categories={vault.categories}
-      familyMembers={vault.familyMembers}
-      inviteEmail={inviteEmail}
-      newCategoryName={newCategoryName}
-      onSyncNow={syncNow}
-      onReset={() => {
-        clearVault();
-        window.location.reload();
-      }}
-      onShiftDate={shiftDate}
-      onSetGranularity={setGranularity}
+    <Dashboard firstName={session.displayName.split(" ")[0]} syncing={syncing} periodLabel={periodLabel(granularity, selectedDate)} granularity={granularity}
+      categoryChartData={categoryChartData} linkedAccounts={vault!.linkedAccounts} plaidToken={plaidToken} plaidReady={plaidReady}
+      selectedCategoryId={selectedCategoryId} groupedByMerchant={groupedByMerchant} sixMonthBars={sixMonthBars} budgetRows={budgetRows}
+      editingBudgetCategory={editingBudgetCategory} editingBudgetValue={editingBudgetValue} uncategorized={uncategorized} ruleSuggestions={ruleSuggestions}
+      categories={vault!.categories} familyMembers={vault!.familyMembers} inviteEmail={inviteEmail} newCategoryName={newCategoryName}
+      onSyncNow={syncNow} onReset={handleSignOut} onShiftDate={shiftDate} onSetGranularity={setGranularity}
       onSetSelectedCategoryId={(v) => setSelectedCategoryId(v)}
-      onOpenAddAccount={() => {
-        if (plaidToken) openPlaidLink();
-        else void onPlaidSuccess("mock-public-token");
-      }}
-      onStartEditBudget={(categoryId, currentBudget) => {
-        setEditingBudgetCategory(categoryId);
-        setEditingBudgetValue(String(currentBudget || 0));
-      }}
+      onOpenAddAccount={() => { if (plaidToken) openPlaidLink(); else if (import.meta.env.DEV) void handlePlaidSuccess(ctx, "mock"); }}
+      onStartEditBudget={(id, cur) => { setEditingBudgetCategory(id); setEditingBudgetValue(String(cur || 0)); }}
       onSetEditingBudgetValue={setEditingBudgetValue}
-      onSaveBudget={saveBudget}
-      onUpdateTransactionCategory={updateTransactionCategory}
-      onAddCategory={addCategory}
+      onSaveBudget={(id) => handleSaveBudget(ctx, id, editingBudgetValue, selectedDate, () => { setEditingBudgetCategory(null); setEditingBudgetValue(""); })}
+      onUpdateTransactionCategory={(txId, catId) => handleUpdateTxCategory(ctx, txId, catId)}
+      onAddCategory={(e) => handleAddCategory(ctx, e, newCategoryName, () => setNewCategoryName(""))}
       onSetNewCategoryName={setNewCategoryName}
-      onAddFamilyMember={addFamilyMember}
-      onSetInviteEmail={setInviteEmail}
-      currency={currency}
-      aiSettings={vault.aiSettings}
-      aiCategorizingNow={aiCategorizingNow}
-      aiLastResult={aiLastResult}
-      onUpdateAiSettings={updateAiSettings}
-      onAiCategorizeNow={aiCategorizeNow}
-    />
+      onAddFamilyMember={(e) => handleAddFamily(ctx, e, inviteEmail, () => setInviteEmail(""))}
+      onSetInviteEmail={setInviteEmail} currency={currency}
+      aiSettings={vault!.aiSettings} aiCategorizingNow={aiCategorizingNow} aiLastResult={aiLastResult}
+      onUpdateAiSettings={(s: AiProviderSettings | undefined) => handleUpdateAiSettings(ctx, s, () => setAiLastResult(null))}
+      onAiCategorizeNow={() => handleAiCategorize(ctx, setAiCategorizingNow, setAiLastResult)} />
   );
 }

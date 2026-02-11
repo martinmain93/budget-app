@@ -137,7 +137,11 @@ export async function decryptPayload<T>(
     dataKey,
     toArrayBuffer(fromBase64(encrypted)),
   );
-  return JSON.parse(decoder.decode(decrypted)) as T;
+  try {
+    return JSON.parse(decoder.decode(decrypted)) as T;
+  } catch {
+    throw new Error("Decrypted payload is not valid JSON — vault data may be corrupted");
+  }
 }
 
 export async function encryptShard(

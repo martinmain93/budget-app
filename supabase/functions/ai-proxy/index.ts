@@ -1,15 +1,19 @@
 /**
  * Stateless AI proxy for providers that block browser CORS (e.g. Anthropic).
  *
- * The user's API key is passed in the request body, forwarded to the provider,
- * and never logged or stored. It exists in memory only for the duration of
- * the request.
+ * The user's API key is passed via the x-provider-key request header (never in
+ * the JSON body), forwarded to the provider, and never logged or stored. It
+ * exists in memory only for the duration of the request.
  */
 
+// SECURITY: Set ALLOWED_ORIGIN env var in production to restrict CORS.
+// Example: ALLOWED_ORIGIN=https://your-app.pages.dev
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") || "*";
+
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, x-provider-key",
 };
 
 const PROVIDER_ENDPOINTS: Record<string, string> = {
@@ -18,7 +22,6 @@ const PROVIDER_ENDPOINTS: Record<string, string> = {
 
 interface ProxyRequest {
   provider: string;
-  apiKey: string;
   body: Record<string, unknown>;
 }
 
@@ -45,11 +48,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     );
   }
 
-  const { provider, apiKey, body } = payload;
+  const { provider, body } = payload;
+  const apiKey = req.headers.get("x-provider-key") ?? "";
 
   if (!provider || !apiKey || !body) {
     return new Response(
-      JSON.stringify({ error: "Missing required fields: provider, apiKey, body" }),
+      JSON.stringify({ error: "Missing required fields: provider, body, and x-provider-key header" }),
       { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );
   }
@@ -86,10 +90,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         "Content-Type": "application/json",
       },
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch {
     return new Response(
-      JSON.stringify({ error: `Upstream request failed: ${message}` }),
+      JSON.stringify({ error: "Upstream request failed" }),
       { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );
   }

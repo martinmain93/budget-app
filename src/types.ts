@@ -73,9 +73,31 @@ export interface VaultEnvelope {
   iterations: number;
 }
 
+/** The sensitive metadata fields that are encrypted under the vault data key. */
+export interface VaultMetadata {
+  categories: Category[];
+  budgets: BudgetTarget[];
+  rules: CategorizationRule[];
+  linkedAccounts: BankAccount[];
+  familyMembers: FamilyMember[];
+  aiSettings?: AiProviderSettings;
+}
+
+/**
+ * The in-memory vault representation. After unlock, all metadata fields are
+ * populated in plaintext for convenient access. When persisted to localStorage,
+ * the metadata fields are encrypted into `encryptedMetadata` and the plaintext
+ * fields are stripped — only `envelope`, `shards`, and `encryptedMetadata` are
+ * written to disk.
+ *
+ * Legacy vaults (created before encrypted-metadata support) store metadata as
+ * plaintext; they are transparently migrated on next save.
+ */
 export interface EncryptedVault {
   envelope: VaultEnvelope;
   shards: VaultShard[];
+  /** Encrypted blob containing VaultMetadata (categories, budgets, rules, etc.). */
+  encryptedMetadata?: { encrypted: string; iv: string };
   categories: Category[];
   budgets: BudgetTarget[];
   rules: CategorizationRule[];
@@ -88,6 +110,7 @@ export interface UserSession {
   userId: string;
   email: string;
   displayName: string;
+  authMethod?: "password" | "google";
 }
 
 /* ── Chart row types ─────────────────── */
