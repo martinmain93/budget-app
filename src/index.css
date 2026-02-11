@@ -1,0 +1,85 @@
+:root {
+  font-family: Inter, Avenir, "Segoe UI", Arial, sans-serif;
+  color: #26333f;
+  background: #f8fbff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  font-size: 15px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: linear-gradient(170deg, #f4f8ff 0%, #faf8ff 50%, #f8fbff 100%);
+  min-height: 100vh;
+}
+
+#root { width: 100%; }
+
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; }
+h2 { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
+h3 { font-size: 0.92rem; font-weight: 600; }
+
+/* ── Shell ──────────────────────────────── */
+.shell { max-width: 1100px; margin: 0 auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+.onboarding-shell { min-height: 100vh; justify-content: center; align-items: center; }
+.onboarding-shell .card { max-width: 440px; width: 100%; padding: 2.5rem 2rem; }
+.onboarding-shell h1 { font-size: 1.85rem; margin-bottom: 0.3rem; }
+.onboarding-shell p { color: #5c6b7e; font-size: 0.92rem; line-height: 1.5; }
+
+/* ── Card ───────────────────────────────── */
+.card { background: #ffffff; border-radius: 18px; padding: 1.25rem; box-shadow: 0 4px 20px rgba(120, 135, 170, 0.08); }
+
+/* ── Top bar ────────────────────────────── */
+.top-bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.25rem 1.5rem; }
+.top-bar h1 { font-size: 1.4rem; }
+.top-bar p { color: #5c6b7e; font-size: 0.85rem; margin-top: 0.15rem; }
+.top-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+/* ── Grid ───────────────────────────────── */
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.chart-card { min-height: 340px; }
+
+/* ── Rows / Stacks ──────────────────────── */
+.row { display: flex; align-items: center; gap: 0.6rem; }
+.spread { justify-content: space-between; }
+.stack { display: flex; flex-direction: column; gap: 0.65rem; margin-top: 0.75rem; }
+
+/* ── Buttons / Inputs / Selects ─────────── */
+button, input, select { border-radius: 10px; border: 1px solid #e0e6f0; font: inherit; padding: 0.55rem 0.95rem; transition: all 0.15s ease; }
+button { background: #edf2ff; color: #2e3c52; cursor: pointer; border-color: #dce3f0; font-weight: 500; font-size: 0.88rem; }
+button:hover { background: #dce8ff; border-color: #c5d4f0; }
+button:focus-visible { outline: 2px solid #7aabff; outline-offset: 2px; }
+button.primary { background: #5b9aff; color: #ffffff; border-color: #4a8aee; font-weight: 600; }
+button.primary:hover { background: #4a8aee; border-color: #3d7ddd; }
+button.primary:disabled { background: #b5d1ff; border-color: #b5d1ff; cursor: default; }
+button.selected { background: #c5e2ff; border-color: #a0cbff; }
+button.ghost { background: transparent; border-color: #e5e9f0; color: #7a8899; font-size: 0.82rem; }
+button.ghost:hover { background: #f5f6fa; color: #5c6b7e; }
+button.danger { color: #b14860; }
+
+input, select { width: 100%; background: #f8faff; color: #26333f; }
+input:focus, select:focus { outline: none; border-color: #7aabff; box-shadow: 0 0 0 3px rgba(122, 171, 255, 0.15); }
+input::placeholder { color: #99a8b8; }
+
+/* ── Pills ──────────────────────────────── */
+.pill { border-radius: 999px; background: #eef3ff; padding: 0.45rem 0.9rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; font-size: 0.88rem; }
+.pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Misc ───────────────────────────────── */
+.error { color: #b14860; }
+small { color: #5c6b7e; font-size: 0.82rem; }
+
+/* ── Empty states ───────────────────────── */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2.5rem 1rem; color: #8a99aa; text-align: center; }
+.empty-state-icon { font-size: 2.2rem; opacity: 0.5; }
+.empty-state p { font-size: 0.88rem; max-width: 260px; line-height: 1.5; }
+
+/* ── Period controls ────────────────────── */
+.period-bar { padding: 0.75rem 1.25rem; }
