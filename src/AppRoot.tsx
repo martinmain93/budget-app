@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { usePlaidLink } from "react-plaid-link";
-import { addOrBoostRule, autoCategorize, autoCategorizeWithAI, suggestRules } from "./aiCategorization";
+import { addOrBoostRule, autoCategorizeWithAI, suggestRules } from "./aiCategorization";
 import { OnboardingScreen, UnlockScreen } from "./AuthScreens";
 import { Dashboard } from "./Dashboard";
 import { decryptAllTransactions, rebuildShardMap, unlockVaultDataKey } from "./cryptoVault";
@@ -298,6 +298,55 @@ export default function AppRoot() {
     persistVault(nextVault);
   }
 
+  async function aiCategorizeNow(): Promise<void> {
+    if (!vault || !dataKey || !vault.aiSettings?.enabled) return;
+    setAiCategorizingNow(true);
+    setAiLastResult(null);
+    try {
+      const aiResult = await autoCategorizeWithAI(
+        transactions,
+        vault.rules,
+        vault.categories,
+        vault.aiSettings,
+      );
+      const nextVault: EncryptedVault = {
+        ...vault,
+        rules: aiResult.rules,
+        shards: await rebuildShardMap(dataKey, aiResult.transactions),
+      };
+      setTransactions(aiResult.transactions);
+      setVault(nextVault);
+      persistVault(nextVault);
+      if (aiResult.error) {
+        setAiLastResult(`Error: ${aiResult.error}`);
+      } else if (aiResult.categorizedCount > 0) {
+        setAiLastResult(
+          `Categorized ${aiResult.categorizedCount} transaction(s)`,
+        );
+      } else {
+        setAiLastResult("No new transactions to categorize");
+      }
+      if (session) await syncVaultMetadata(session, nextVault);
+    } catch (err) {
+      setAiLastResult(
+        `Error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setAiCategorizingNow(false);
+    }
+  }
+
+  async function updateAiSettings(
+    settings: AiProviderSettings | undefined,
+  ): Promise<void> {
+    if (!vault) return;
+    const nextVault: EncryptedVault = { ...vault, aiSettings: settings };
+    setVault(nextVault);
+    persistVault(nextVault);
+    setAiLastResult(null);
+    if (session) await syncVaultMetadata(session, nextVault);
+  }
+
   if (!vault || !session) {
     return <OnboardingScreen onboarding={onboarding} onSubmit={handleCreateVault} onChange={setOnboarding} />;
   }
@@ -358,6 +407,11 @@ export default function AppRoot() {
       onAddFamilyMember={addFamilyMember}
       onSetInviteEmail={setInviteEmail}
       currency={currency}
+      aiSettings={vault.aiSettings}
+      aiCategorizingNow={aiCategorizingNow}
+      aiLastResult={aiLastResult}
+      onUpdateAiSettings={updateAiSettings}
+      onAiCategorizeNow={aiCategorizeNow}
     />
   );
 }
