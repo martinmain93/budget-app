@@ -81,6 +81,8 @@ export interface VaultMetadata {
   linkedAccounts: BankAccount[];
   familyMembers: FamilyMember[];
   aiSettings?: AiProviderSettings;
+  /** Timestamps when user consented to bank account connections. */
+  consentLog?: { action: string; timestamp: string }[];
 }
 
 /**
@@ -104,6 +106,7 @@ export interface EncryptedVault {
   linkedAccounts: BankAccount[];
   familyMembers: FamilyMember[];
   aiSettings?: AiProviderSettings;
+  consentLog?: { action: string; timestamp: string }[];
 }
 
 export interface UserSession {

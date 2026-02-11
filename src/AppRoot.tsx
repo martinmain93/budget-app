@@ -4,14 +4,15 @@ import { usePlaidLink } from "react-plaid-link";
 import { suggestRules } from "./aiCategorization";
 import { OnboardingScreen, PinSetupScreen, PinUnlockScreen, UnlockScreen } from "./AuthScreens";
 import { Dashboard } from "./Dashboard";
+import { PrivacyPolicy } from "./PrivacyPolicy";
 import { decryptAllTransactions, unlockVaultDataKey } from "./cryptoVault";
 import { type GoogleUser, getSupabaseSession, onAuthStateChange, signInWithGoogle, signOutSupabase, toGoogleUser } from "./googleAuth";
 import { vaultExistsInSupabase } from "./metadataSync";
 import { createPlaidLinkToken } from "./plaidService";
 import { buildBudgetRows, buildCategoryChartData, buildGroupedByMerchant, buildSixMonthBars, currency, filterTransactionsForPeriod, periodLabel } from "./appSelectors";
 import type { AiProviderSettings, EncryptedVault, TimeGranularity, Transaction, UserSession } from "./types";
-import { clearVault, decryptVaultMetadata, initializeGoogleVault, initializeVault, loadSession, loadVault, persistSession, unlockGoogleVault } from "./vaultStore";
-import { handleAddCategory, handleAddFamily, handleAiCategorize, handlePlaidSuccess, handleSaveBudget, handleSyncNow, handleUpdateAiSettings, handleUpdateTxCategory } from "./vaultActions";
+import { clearVault, decryptVaultMetadata, initializeGoogleVault, initializeVault, loadSession, loadVault, persistSession, persistVaultSecure, unlockGoogleVault } from "./vaultStore";
+import { handleAddCategory, handleAddFamily, handleAiCategorize, handleDeleteAccount, handlePlaidSuccess, handleRemoveFamilyMember, handleSaveBudget, handleSyncNow, handleUpdateAiSettings, handleUpdateTxCategory } from "./vaultActions";
 
 type AuthPhase = "loading" | "onboarding" | "pin-setup" | "pin-unlock" | "password-unlock" | "ready";
 
@@ -40,6 +41,8 @@ export default function AppRoot() {
   const [unlockPassword, setUnlockPassword] = useState("");
   const [aiCategorizingNow, setAiCategorizingNow] = useState(false);
   const [aiLastResult, setAiLastResult] = useState<string | null>(null);
+  const [showPrivacy, setShowPrivacy] = useState(() => window.location.hash === "#privacy");
+  const [showConsentDialog, setShowConsentDialog] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -116,6 +119,7 @@ export default function AppRoot() {
   function shiftDate(d: -1 | 1) { granularity === "month" ? setSelectedDate((v) => new Date(v.getFullYear(), v.getMonth() + d, 1)) : setSelectedDate((v) => new Date(v.getFullYear() + d, v.getMonth(), 1)); }
 
   /* ── Render ─────────────────────────────────────────── */
+  if (showPrivacy) return <PrivacyPolicy onBack={() => { setShowPrivacy(false); window.location.hash = ""; }} />;
   if (authPhase === "loading") return <div className="shell onboarding-shell"><div className="card"><p>Loading...</p></div></div>;
   if (authPhase === "onboarding") return <OnboardingScreen onboarding={onboarding} onSubmit={handleCreateVault} onChange={setOnboarding} onGoogleSignIn={handleGoogleSignIn} googleLoading={googleLoading} />;
   if (authPhase === "pin-setup" && googleUser) return <PinSetupScreen googleEmail={googleUser.email} onSubmit={handlePinSetup} error={pinError} />;
@@ -129,9 +133,23 @@ export default function AppRoot() {
       selectedCategoryId={selectedCategoryId} groupedByMerchant={groupedByMerchant} sixMonthBars={sixMonthBars} budgetRows={budgetRows}
       editingBudgetCategory={editingBudgetCategory} editingBudgetValue={editingBudgetValue} uncategorized={uncategorized} ruleSuggestions={ruleSuggestions}
       categories={vault!.categories} familyMembers={vault!.familyMembers} inviteEmail={inviteEmail} newCategoryName={newCategoryName}
-      onSyncNow={syncNow} onReset={handleSignOut} onShiftDate={shiftDate} onSetGranularity={setGranularity}
+      onSyncNow={syncNow} onReset={handleSignOut} onDeleteAccount={async () => { await handleDeleteAccount(); setGoogleUser(null); setSession(null); setVault(null); setDataKey(null); setAuthPhase("onboarding"); }}
+      onRemoveFamilyMember={(id) => { if (ctx) void handleRemoveFamilyMember(ctx, id); }}
+      onShiftDate={shiftDate} onSetGranularity={setGranularity}
       onSetSelectedCategoryId={(v) => setSelectedCategoryId(v)}
-      onOpenAddAccount={() => { if (plaidToken) openPlaidLink(); else if (import.meta.env.DEV) void handlePlaidSuccess(ctx, "mock"); }}
+      showConsentDialog={showConsentDialog}
+      onOpenAddAccount={() => setShowConsentDialog(true)}
+      onConsentAccepted={async () => {
+        setShowConsentDialog(false);
+        // Log consent
+        const log = [...(vault!.consentLog ?? []), { action: "bank_connect", timestamp: new Date().toISOString() }];
+        const next = { ...vault!, consentLog: log };
+        setVault(next);
+        await persistVaultSecure(next, dataKey!);
+        // Proceed with bank link
+        if (plaidToken) openPlaidLink(); else void handlePlaidSuccess(ctx, "mock");
+      }}
+      onConsentDeclined={() => setShowConsentDialog(false)}
       onStartEditBudget={(id, cur) => { setEditingBudgetCategory(id); setEditingBudgetValue(String(cur || 0)); }}
       onSetEditingBudgetValue={setEditingBudgetValue}
       onSaveBudget={(id) => handleSaveBudget(ctx, id, editingBudgetValue, selectedDate, () => { setEditingBudgetCategory(null); setEditingBudgetValue(""); })}

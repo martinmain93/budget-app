@@ -37,6 +37,18 @@ interface PinUnlockScreenProps {
   onSignOut: () => void;
 }
 
+/* ── Privacy link footer ──────────────────────────────── */
+
+function PrivacyFooter() {
+  return (
+    <div style={{ textAlign: "center", marginTop: "1.25rem" }}>
+      <a href="#privacy" onClick={() => window.location.hash = "privacy"} style={{ fontSize: "0.78rem", color: "#8a99aa" }}>
+        Privacy Policy
+      </a>
+    </div>
+  );
+}
+
 /* ── Google divider ───────────────────────────────────── */
 
 function Divider() {
@@ -72,7 +84,7 @@ export function OnboardingScreen({ onboarding, onSubmit, onChange, onGoogleSignI
   return (
     <div className="shell onboarding-shell">
       <div className="card">
-        <h1>Sunny Budget</h1>
+        <h1>Basic Budget</h1>
         <p>Simple setup. Private by default. Your data stays encrypted in your browser.</p>
 
         <div className="stack">
@@ -115,6 +127,7 @@ export function OnboardingScreen({ onboarding, onSubmit, onChange, onGoogleSignI
             </>
           )}
         </div>
+        <PrivacyFooter />
       </div>
     </div>
   );
@@ -154,6 +167,7 @@ export function PinSetupScreen({ googleEmail, onSubmit, error }: PinSetupScreenP
           {(localError || error) && <small className="error">{localError || error}</small>}
           <button type="submit" className="primary">Create Vault</button>
         </form>
+        <PrivacyFooter />
       </div>
     </div>
   );
@@ -183,6 +197,7 @@ export function PinUnlockScreen({ googleEmail, onSubmit, error, onSignOut }: Pin
         <button type="button" className="ghost" onClick={onSignOut} style={{ marginTop: "0.75rem", fontSize: "0.82rem", width: "100%" }}>
           Sign out
         </button>
+        <PrivacyFooter />
       </div>
     </div>
   );
@@ -202,6 +217,7 @@ export function UnlockScreen({ unlockPassword, unlockError, onSubmit, onPassword
           <button type="submit" className="primary">Unlock</button>
           {unlockError && <small className="error">{unlockError}</small>}
         </form>
+        <PrivacyFooter />
       </div>
     </div>
   );

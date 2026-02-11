@@ -3,30 +3,41 @@ import { expect, test } from "@playwright/test";
 /**
  * E2E tests use the password-based fallback flow since Google OAuth
  * requires a real browser redirect to Google's servers.
- * Without VITE_SUPABASE_URL set, the onboarding screen shows the
- * password form directly (no Google button).
  */
+
+/** Helper: navigate to the password-based onboarding form. */
+async function goToPasswordForm(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.waitForSelector(".onboarding-shell", { timeout: 10000 });
+  // If Supabase is configured, the password form is behind a toggle
+  const toggle = page.getByText("Use email + password instead");
+  if (await toggle.isVisible({ timeout: 2000 }).catch(() => false)) {
+    await toggle.click();
+  }
+}
+
+/** Helper: create vault and add a demo bank account (with consent). */
+async function createVaultAndAddBank(page: import("@playwright/test").Page) {
+  await page.getByPlaceholder("Your name").fill("Martin");
+  await page.getByPlaceholder("Email").fill("martin@example.com");
+  await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
+  await page.getByRole("button", { name: "Create Vault" }).click();
+  await expect(page.getByRole("heading", { name: /here's your spend view/i })).toBeVisible();
+  // Add bank account (triggers consent dialog first)
+  await page.getByRole("button", { name: /Add bank account/i }).click();
+  await page.getByRole("button", { name: /I agree/i }).click();
+  await expect(page.getByText("Demo Bank")).toBeVisible();
+}
+
 test.describe("Budget Vault core flow", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await page.evaluate(() => localStorage.clear());
-    await page.reload();
-    // Wait for loading phase to finish
-    await page.waitForSelector(".onboarding-shell", { timeout: 5000 });
+    await goToPasswordForm(page);
   });
 
   test("onboarding to dashboard and core interactions work", async ({ page }) => {
-    await page.getByPlaceholder("Your name").fill("Martin");
-    await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
-    await page.getByRole("button", { name: "Create Vault" }).click();
-
-    await expect(
-      page.getByRole("heading", { name: /here's your spend view/i }),
-    ).toBeVisible();
-
-    await page.getByRole("button", { name: /Add bank account/i }).click();
-    await expect(page.getByText("Demo Bank")).toBeVisible();
+    await createVaultAndAddBank(page);
 
     await page.getByRole("button", { name: "Sync now" }).click();
     await expect(page.getByRole("heading", { name: "AI categorization" })).toBeVisible();
@@ -42,11 +53,7 @@ test.describe("Budget Vault core flow", () => {
   });
 
   test("supports category/family management and budget editing", async ({ page }) => {
-    await page.getByPlaceholder("Your name").fill("Martin");
-    await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
-    await page.getByRole("button", { name: "Create Vault" }).click();
-    await page.getByRole("button", { name: /Add bank account/i }).click();
+    await createVaultAndAddBank(page);
     await page.getByRole("button", { name: "Sync now" }).click();
 
     await page.getByPlaceholder("New category").fill("Pets");
@@ -67,11 +74,7 @@ test.describe("Budget Vault core flow", () => {
   });
 
   test("supports chart drill-down and dismissal", async ({ page }) => {
-    await page.getByPlaceholder("Your name").fill("Martin");
-    await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
-    await page.getByRole("button", { name: "Create Vault" }).click();
-    await page.getByRole("button", { name: /Add bank account/i }).click();
+    await createVaultAndAddBank(page);
     await page.getByRole("button", { name: "Sync now" }).click();
 
     await page.locator(".recharts-sector").first().click();
@@ -85,12 +88,8 @@ test.describe("Budget Vault core flow", () => {
 
   test("responsive layout on mobile viewport", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-
-    await page.getByPlaceholder("Your name").fill("Martin");
-    await page.getByPlaceholder("Email").fill("martin@example.com");
-    await page.getByPlaceholder(/Vault password/).fill("super-secret-password");
-    await page.getByRole("button", { name: "Create Vault" }).click();
-    await page.getByRole("button", { name: /Add bank account/i }).click();
+    await goToPasswordForm(page);
+    await createVaultAndAddBank(page);
     await page.getByRole("button", { name: "Sync now" }).click();
 
     await expect(page.getByRole("heading", { name: /here's your spend view/i })).toBeVisible();

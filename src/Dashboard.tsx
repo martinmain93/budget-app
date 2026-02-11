@@ -31,10 +31,15 @@ interface DashboardProps {
   newCategoryName: string;
   onSyncNow: () => Promise<void>;
   onReset: () => void;
+  onDeleteAccount: () => void;
+  onRemoveFamilyMember: (id: string) => void;
   onShiftDate: (d: -1 | 1) => void;
   onSetGranularity: (v: TimeGranularity) => void;
   onSetSelectedCategoryId: (v: string | null) => void;
+  showConsentDialog: boolean;
   onOpenAddAccount: () => void;
+  onConsentAccepted: () => Promise<void>;
+  onConsentDeclined: () => void;
   onStartEditBudget: (id: string, cur: number) => void;
   onSetEditingBudgetValue: (v: string) => void;
   onSaveBudget: (id: string) => Promise<void>;
@@ -67,7 +72,8 @@ export function Dashboard(p: DashboardProps) {
           <button type="button" className="primary" onClick={() => void p.onSyncNow()} disabled={p.syncing}>
             {p.syncing ? "Syncing..." : "Sync now"}
           </button>
-          <button type="button" onClick={p.onReset} className="ghost danger">Reset vault</button>
+          <button type="button" onClick={p.onReset} className="ghost danger">Sign out</button>
+          <button type="button" onClick={() => { if (window.confirm("Permanently delete your account and all data? This cannot be undone.")) p.onDeleteAccount(); }} className="ghost danger">Delete account</button>
         </div>
       </header>
 
@@ -124,6 +130,19 @@ export function Dashboard(p: DashboardProps) {
             <button type="button" className="primary" disabled={p.plaidToken ? !p.plaidReady : false} onClick={p.onOpenAddAccount}>
               + Add bank account
             </button>
+            {p.showConsentDialog && (
+              <div className="consent-dialog card" style={{ marginTop: "0.75rem", border: "1px solid #d0d8e8", background: "#f8faff" }}>
+                <p style={{ fontSize: "0.88rem", marginBottom: "0.5rem" }}><strong>Connect bank account</strong></p>
+                <p style={{ fontSize: "0.82rem", color: "#5c6b7e", lineHeight: 1.5 }}>
+                  You are about to connect a bank account. Your transaction data will be encrypted in your browser and stored only in your personal vault. No plaintext financial data is stored on our servers.
+                  By proceeding, you consent to this data processing. See our <a href="#privacy">Privacy Policy</a>.
+                </p>
+                <div className="row" style={{ marginTop: "0.75rem", gap: "0.5rem" }}>
+                  <button type="button" className="primary" onClick={() => void p.onConsentAccepted()}>I agree, connect</button>
+                  <button type="button" className="ghost" onClick={p.onConsentDeclined}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         </article>
       </section>
@@ -268,7 +287,14 @@ export function Dashboard(p: DashboardProps) {
           </form>
           <div className="stack">
             {p.familyMembers.map((m) => (
-              <div className="pill" key={m.id}><span>{m.email}</span><small>{m.role}</small></div>
+              <div className="pill" key={m.id}>
+                <span>{m.email}</span>
+                <small>{m.role}</small>
+                {m.role !== "owner" && (
+                  <button type="button" className="ghost danger" style={{ padding: "0.1rem 0.4rem", fontSize: "0.75rem", minHeight: "auto", minWidth: "auto", marginLeft: "0.25rem" }}
+                    onClick={() => p.onRemoveFamilyMember(m.id)}>Remove</button>
+                )}
+              </div>
             ))}
             {p.familyMembers.length === 0 && <small>No family members linked yet.</small>}
           </div>

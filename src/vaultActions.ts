@@ -5,7 +5,8 @@ import { pushVaultToSupabase } from "./metadataSync";
 import { exchangePlaidPublicToken, syncTransactionsForAccount } from "./plaidService";
 import { monthKey, normalizeGroup } from "./appSelectors";
 import type { AiProviderSettings, BankAccount, BudgetTarget, EncryptedVault, Transaction } from "./types";
-import { persistVaultSecure } from "./vaultStore";
+import { supabase } from "./supabaseClient";
+import { clearVault, persistVaultSecure } from "./vaultStore";
 
 const PALETTE = ["#A8D8EA", "#AA96DA", "#FCBAD3", "#B5EAD7", "#FBC687"];
 
@@ -89,6 +90,20 @@ export async function handleAiCategorize(ctx: VaultCtx, setWorking: (v: boolean)
     setResult(ai.error ? `Error: ${ai.error}` : ai.categorizedCount > 0 ? `Categorized ${ai.categorizedCount} transaction(s)` : "No new transactions to categorize");
   } catch (err) { setResult(`Error: ${err instanceof Error ? err.message : String(err)}`); }
   finally { setWorking(false); }
+}
+
+export async function handleRemoveFamilyMember(ctx: VaultCtx, memberId: string) {
+  const next: EncryptedVault = { ...ctx.vault, familyMembers: ctx.vault.familyMembers.filter((m) => m.id !== memberId) };
+  await saveAndPush(next, ctx.dataKey, ctx.setVault);
+}
+
+export async function handleDeleteAccount(): Promise<void> {
+  if (supabase) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) await supabase.from("vault_data").delete().eq("user_id", user.id);
+    await supabase.auth.signOut();
+  }
+  clearVault();
 }
 
 export async function handleUpdateAiSettings(ctx: VaultCtx, settings: AiProviderSettings | undefined, clearResult: () => void) {
