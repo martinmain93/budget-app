@@ -115,9 +115,16 @@ export default function AppRoot() {
   const { open: openPlaidLink, ready: plaidReady } = usePlaidLink({ token: plaidToken ?? "", onSuccess: async (t) => { if (ctx) await handlePlaidSuccess(ctx, t); } });
 
   const syncNow = async () => { if (ctx) await handleSyncNow(ctx, setSyncing, setAiLastResult); };
-  useEffect(() => { if (dataKey && vault) { syncNow().catch((e) => { if (import.meta.env.DEV) console.error(e); }); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [dataKey]);
+  useEffect(() => {
+    if (dataKey && vault) syncNow().catch((e) => { if (import.meta.env.DEV) console.error(e); });
+    // Intentionally run only when dataKey is ready
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey]);
 
-  function shiftDate(d: -1 | 1) { granularity === "month" ? setSelectedDate((v) => new Date(v.getFullYear(), v.getMonth() + d, 1)) : setSelectedDate((v) => new Date(v.getFullYear() + d, v.getMonth(), 1)); }
+  function shiftDate(d: -1 | 1) {
+    if (granularity === "month") setSelectedDate((v) => new Date(v.getFullYear(), v.getMonth() + d, 1));
+    else setSelectedDate((v) => new Date(v.getFullYear() + d, v.getMonth(), 1));
+  }
 
   /* ── Render ─────────────────────────────────────────── */
   if (showPrivacy) return <PrivacyPolicy onBack={() => { setShowPrivacy(false); window.location.hash = ""; }} />;
