@@ -54,6 +54,8 @@ interface DashboardProps {
   aiLastResult: string | null;
   onUpdateAiSettings: (s: AiProviderSettings | undefined) => Promise<void>;
   onAiCategorizeNow: () => Promise<void>;
+  onImportCsv: (file: File) => Promise<void>;
+  importResult: { imported: number; skipped: number; errors: string[] } | null;
 }
 
 export function Dashboard(p: DashboardProps) {
@@ -127,9 +129,37 @@ export function Dashboard(p: DashboardProps) {
               </div>
             ))}
             {p.linkedAccounts.length === 0 && <small>No accounts connected yet.</small>}
-            <button type="button" className="primary" disabled={p.plaidToken ? !p.plaidReady : false} onClick={p.onOpenAddAccount}>
-              + Add bank account
-            </button>
+            <div className="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
+              <button type="button" className="primary" disabled={p.plaidToken ? !p.plaidReady : false} onClick={p.onOpenAddAccount}>
+                + Add bank account
+              </button>
+              <label className="primary" style={{ margin: 0, cursor: "pointer" }}>
+                Import CSV
+                <input
+                  type="file"
+                  accept=".csv"
+                  style={{ position: "absolute", width: 0, height: 0, opacity: 0 }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      void p.onImportCsv(file);
+                      e.target.value = "";
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {p.importResult && (
+              <div className="import-result" style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#2d3748" }}>
+                Imported {p.importResult.imported} transaction(s){p.importResult.skipped > 0 ? `, ${p.importResult.skipped} already present` : ""}.
+                {p.importResult.errors.length > 0 && (
+                  <div style={{ marginTop: "0.25rem", color: "#c53030" }}>
+                    {p.importResult.errors.slice(0, 5).map((err, i) => <div key={i}>{err}</div>)}
+                    {p.importResult.errors.length > 5 && <div>… and {p.importResult.errors.length - 5} more</div>}
+                  </div>
+                )}
+              </div>
+            )}
             {p.showConsentDialog && (
               <div className="consent-dialog card" style={{ marginTop: "0.75rem", border: "1px solid #d0d8e8", background: "#f8faff" }}>
                 <p style={{ fontSize: "0.88rem", marginBottom: "0.5rem" }}><strong>Connect bank account</strong></p>

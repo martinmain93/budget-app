@@ -1,5 +1,6 @@
 import type { FormEvent } from "react";
 import { addOrBoostRule, autoCategorizeWithAI } from "./aiCategorization";
+import { parseBankCsv } from "./csvImporter";
 import { rebuildShardMap } from "./cryptoVault";
 import { pushVaultToSupabase } from "./metadataSync";
 import { exchangePlaidPublicToken, syncTransactionsForAccount } from "./plaidService";
@@ -7,6 +8,8 @@ import { monthKey, normalizeGroup } from "./appSelectors";
 import type { AiProviderSettings, BankAccount, BudgetTarget, EncryptedVault, Transaction } from "./types";
 import { supabase } from "./supabaseClient";
 import { clearVault, persistVaultSecure } from "./vaultStore";
+
+export const CSV_IMPORT_ACCOUNT_ID = "csv-import";
 
 const PALETTE = ["#A8D8EA", "#AA96DA", "#FCBAD3", "#B5EAD7", "#FBC687"];
 
@@ -110,4 +113,53 @@ export async function handleUpdateAiSettings(ctx: VaultCtx, settings: AiProvider
   const next: EncryptedVault = { ...ctx.vault, aiSettings: settings };
   await saveAndPush(next, ctx.dataKey, ctx.setVault);
   clearResult();
+}
+
+function ensureCsvImportAccount(linkedAccounts: BankAccount[]): BankAccount[] {
+  if (linkedAccounts.some((a) => a.id === CSV_IMPORT_ACCOUNT_ID)) return linkedAccounts;
+  return [
+    ...linkedAccounts,
+    {
+      id: CSV_IMPORT_ACCOUNT_ID,
+      institutionName: "Import",
+      accountName: "CSV",
+      mask: "csv",
+      addedAt: new Date().toISOString(),
+    },
+  ];
+}
+
+export interface ImportCsvResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export async function handleImportCsv(
+  ctx: VaultCtx,
+  csvText: string,
+  setResult: (r: ImportCsvResult | null) => void,
+): Promise<void> {
+  const linkedAccounts = ensureCsvImportAccount(ctx.vault.linkedAccounts);
+  const { transactions: parsed, errors } = parseBankCsv(csvText, CSV_IMPORT_ACCOUNT_ID);
+  const existingIds = new Set(ctx.transactions.map((t) => t.id));
+  const toAdd = parsed.filter((t) => !existingIds.has(t.id));
+  const skipped = parsed.length - toAdd.length;
+  if (toAdd.length === 0) {
+    setResult({ imported: 0, skipped, errors });
+    return;
+  }
+  const merged = [...ctx.transactions, ...toAdd];
+  const ai = await autoCategorizeWithAI(merged, ctx.vault.rules, ctx.vault.categories, ctx.vault.aiSettings);
+  const next: EncryptedVault = {
+    ...ctx.vault,
+    linkedAccounts,
+    rules: ai.rules,
+    shards: await rebuildShardMap(ctx.dataKey, ai.transactions),
+  };
+  ctx.setTransactions(ai.transactions);
+  ctx.setVault(next);
+  await persistVaultSecure(next, ctx.dataKey);
+  await pushVaultToSupabase(next);
+  setResult({ imported: toAdd.length, skipped, errors });
 }

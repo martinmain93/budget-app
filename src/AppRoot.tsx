@@ -12,7 +12,7 @@ import { createPlaidLinkToken } from "./plaidService";
 import { buildBudgetRows, buildCategoryChartData, buildGroupedByMerchant, buildSixMonthBars, currency, filterTransactionsForPeriod, periodLabel } from "./appSelectors";
 import type { AiProviderSettings, EncryptedVault, TimeGranularity, Transaction, UserSession } from "./types";
 import { clearVault, decryptVaultMetadata, initializeGoogleVault, initializeVault, loadSession, loadVault, persistSession, persistVaultSecure, unlockGoogleVault } from "./vaultStore";
-import { handleAddCategory, handleAddFamily, handleAiCategorize, handleDeleteAccount, handlePlaidSuccess, handleRemoveFamilyMember, handleSaveBudget, handleSyncNow, handleUpdateAiSettings, handleUpdateTxCategory } from "./vaultActions";
+import { handleAddCategory, handleAddFamily, handleAiCategorize, handleDeleteAccount, handleImportCsv, handlePlaidSuccess, handleRemoveFamilyMember, handleSaveBudget, handleSyncNow, handleUpdateAiSettings, handleUpdateTxCategory } from "./vaultActions";
 
 type AuthPhase = "loading" | "onboarding" | "pin-setup" | "pin-unlock" | "password-unlock" | "ready";
 
@@ -41,6 +41,7 @@ export default function AppRoot() {
   const [unlockPassword, setUnlockPassword] = useState("");
   const [aiCategorizingNow, setAiCategorizingNow] = useState(false);
   const [aiLastResult, setAiLastResult] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(() => window.location.hash === "#privacy");
   const [showConsentDialog, setShowConsentDialog] = useState(false);
 
@@ -160,6 +161,11 @@ export default function AppRoot() {
       onSetInviteEmail={setInviteEmail} currency={currency}
       aiSettings={vault!.aiSettings} aiCategorizingNow={aiCategorizingNow} aiLastResult={aiLastResult}
       onUpdateAiSettings={(s: AiProviderSettings | undefined) => handleUpdateAiSettings(ctx, s, () => setAiLastResult(null))}
-      onAiCategorizeNow={() => handleAiCategorize(ctx, setAiCategorizingNow, setAiLastResult)} />
+      onAiCategorizeNow={() => handleAiCategorize(ctx, setAiCategorizingNow, setAiLastResult)}
+      onImportCsv={async (file) => {
+        const text = await file.text();
+        await handleImportCsv(ctx, text, setImportResult);
+      }}
+      importResult={importResult} />
   );
 }
