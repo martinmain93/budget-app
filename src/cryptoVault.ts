@@ -40,10 +40,11 @@ async function deriveWrappingKey(
     ["deriveKey"],
   );
 
+  const saltBuf = new Uint8Array(salt);
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: toArrayBuffer(salt),
+      salt: saltBuf,
       iterations: ITERATIONS,
       hash: "SHA-256",
     },
@@ -79,8 +80,9 @@ export async function createVaultEnvelope(
     ["encrypt", "decrypt"],
   );
   const rawDataKey = await exportDataKeyRaw(dataKey);
+  const ivBuf = new Uint8Array(iv);
   const encryptedDataKey = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: ivBuf },
     wrappingKey,
     toArrayBuffer(rawDataKey),
   );
@@ -106,8 +108,9 @@ export async function unlockVaultDataKey(
   const iv = fromBase64(envelope.iv);
   const encryptedDataKey = fromBase64(envelope.encryptedDataKey);
   const wrappingKey = await deriveWrappingKey(password, salt);
+  const ivBuf = new Uint8Array(iv);
   const rawDataKey = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(iv) },
+    { name: "AES-GCM", iv: ivBuf },
     wrappingKey,
     toArrayBuffer(encryptedDataKey),
   );
@@ -119,8 +122,9 @@ export async function encryptPayload(
   payload: unknown,
 ): Promise<{ encrypted: string; iv: string }> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ivBuf = new Uint8Array(iv);
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(iv) },
+    { name: "AES-GCM", iv: ivBuf },
     dataKey,
     encoder.encode(JSON.stringify(payload)),
   );
@@ -132,8 +136,9 @@ export async function decryptPayload<T>(
   encrypted: string,
   iv: string,
 ): Promise<T> {
+  const ivBuf = new Uint8Array(fromBase64(iv));
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(fromBase64(iv)) },
+    { name: "AES-GCM", iv: ivBuf },
     dataKey,
     toArrayBuffer(fromBase64(encrypted)),
   );
