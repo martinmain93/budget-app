@@ -54,11 +54,12 @@ export function buildCategoryChartData(
   filteredTransactions: Transaction[],
 ) {
   if (!vault) return [];
+  const categories = vault.categories ?? [];
   const spend = new Map<string, number>();
   for (const tx of filteredTransactions) {
     spend.set(tx.categoryId, (spend.get(tx.categoryId) ?? 0) + tx.amount);
   }
-  return vault.categories
+  return categories
     .map((category) => ({
       categoryId: category.id,
       name: category.name,
@@ -118,13 +119,15 @@ export function buildBudgetRows(
   filteredTransactions: Transaction[],
 ) {
   if (!vault) return [];
+  const categories = vault.categories ?? [];
+  const budgets = vault.budgets ?? [];
   const currentMonth = monthKey(selectedDate);
   const spendByCategory = new Map<string, number>();
   for (const tx of filteredTransactions) {
     spendByCategory.set(tx.categoryId, (spendByCategory.get(tx.categoryId) ?? 0) + tx.amount);
   }
-  const budgetsForMonth = vault.budgets.filter((b) => b.monthKey === currentMonth);
-  return vault.categories
+  const budgetsForMonth = budgets.filter((b) => b.monthKey === currentMonth);
+  return categories
     .filter((c) => c.id !== "uncategorized")
     .map((category) => {
       const budget = budgetsForMonth.find((b) => b.categoryId === category.id)?.amount ?? 0;

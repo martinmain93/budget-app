@@ -152,10 +152,10 @@ export function Dashboard(p: DashboardProps) {
             {p.importResult && (
               <div className="import-result" style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#2d3748" }}>
                 Imported {p.importResult.imported} transaction(s){p.importResult.skipped > 0 ? `, ${p.importResult.skipped} already present` : ""}.
-                {p.importResult.errors.length > 0 && (
+                {(p.importResult.errors ?? []).length > 0 && (
                   <div style={{ marginTop: "0.25rem", color: "#c53030" }}>
-                    {p.importResult.errors.slice(0, 5).map((err, i) => <div key={i}>{err}</div>)}
-                    {p.importResult.errors.length > 5 && <div>… and {p.importResult.errors.length - 5} more</div>}
+                    {(p.importResult.errors ?? []).slice(0, 5).map((err, i) => <div key={i}>{err}</div>)}
+                    {(p.importResult.errors ?? []).length > 5 && <div>… and {(p.importResult.errors ?? []).length - 5} more</div>}
                   </div>
                 )}
               </div>

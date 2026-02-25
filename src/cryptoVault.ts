@@ -109,10 +109,11 @@ export async function unlockVaultDataKey(
   const encryptedDataKey = fromBase64(envelope.encryptedDataKey);
   const wrappingKey = await deriveWrappingKey(password, salt);
   const ivBuf = new Uint8Array(iv);
+  const dataBuf = new Uint8Array(encryptedDataKey);
   const rawDataKey = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: ivBuf },
     wrappingKey,
-    toArrayBuffer(encryptedDataKey),
+    dataBuf,
   );
   return importDataKey(new Uint8Array(rawDataKey));
 }
@@ -137,10 +138,11 @@ export async function decryptPayload<T>(
   iv: string,
 ): Promise<T> {
   const ivBuf = new Uint8Array(fromBase64(iv));
+  const dataBuf = new Uint8Array(fromBase64(encrypted));
   const decrypted = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: ivBuf },
     dataKey,
-    toArrayBuffer(fromBase64(encrypted)),
+    dataBuf,
   );
   try {
     return JSON.parse(decoder.decode(decrypted)) as T;

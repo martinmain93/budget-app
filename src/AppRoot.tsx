@@ -70,7 +70,7 @@ export default function AppRoot() {
   const sixMonthBars = useMemo(() => buildSixMonthBars(transactions, selectedDate, selectedCategoryId), [transactions, selectedDate, selectedCategoryId]);
   const budgetRows = useMemo(() => buildBudgetRows(vault, selectedDate, filteredTx), [vault, selectedDate, filteredTx]);
   const uncategorized = useMemo(() => filteredTx.filter((t) => t.categoryId === "uncategorized").slice(0, 10), [filteredTx]);
-  const ruleSuggestions = useMemo(() => vault ? suggestRules(transactions, vault.rules, vault.categories) : [], [vault, transactions]);
+  const ruleSuggestions = useMemo(() => vault ? suggestRules(transactions, vault.rules ?? [], vault.categories ?? []) : [], [vault, transactions]);
 
   const ctx = vault && dataKey ? { vault, dataKey, setVault, setTransactions, transactions } : null;
 
@@ -137,10 +137,10 @@ export default function AppRoot() {
 
   return (
     <Dashboard firstName={session.displayName.split(" ")[0]} syncing={syncing} periodLabel={periodLabel(granularity, selectedDate)} granularity={granularity}
-      categoryChartData={categoryChartData} linkedAccounts={vault!.linkedAccounts} plaidToken={plaidToken} plaidReady={plaidReady}
+      categoryChartData={categoryChartData} linkedAccounts={vault!.linkedAccounts ?? []} plaidToken={plaidToken} plaidReady={plaidReady}
       selectedCategoryId={selectedCategoryId} groupedByMerchant={groupedByMerchant} sixMonthBars={sixMonthBars} budgetRows={budgetRows}
       editingBudgetCategory={editingBudgetCategory} editingBudgetValue={editingBudgetValue} uncategorized={uncategorized} ruleSuggestions={ruleSuggestions}
-      categories={vault!.categories} familyMembers={vault!.familyMembers} inviteEmail={inviteEmail} newCategoryName={newCategoryName}
+      categories={vault!.categories ?? []} familyMembers={vault!.familyMembers ?? []} inviteEmail={inviteEmail} newCategoryName={newCategoryName}
       onSyncNow={syncNow} onReset={handleSignOut} onDeleteAccount={async () => { await handleDeleteAccount(); setGoogleUser(null); setSession(null); setVault(null); setDataKey(null); setAuthPhase("onboarding"); }}
       onRemoveFamilyMember={(id) => { if (ctx) void handleRemoveFamilyMember(ctx, id); }}
       onShiftDate={shiftDate} onSetGranularity={setGranularity}
